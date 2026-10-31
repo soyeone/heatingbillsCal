@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>온기 · 우리집 난방비 대시보드</title>
+  <meta name="description" content="지역난방 열량계 검침값과 월별 단가로 난방비를 계산하고, 수원시 일 최고/최저 기온과 함께 사용량 추이를 분석하는 개인 대시보드." />
+  <meta name="theme-color" content="#0f0b14" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="bg-orbs" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <!-- 설정 안내 -->
+  <section id="setup-screen" class="center-screen hidden">
+    <div class="glass auth-card">
+      <div class="brand big"><span class="flame">🔥</span> 온기</div>
+      <h1>Supabase 설정이 필요해요</h1>
+      <p class="muted">
+        <code>js/config.js</code> 파일이 없거나 값이 비어 있습니다.<br />
+        README의 <b>설정 방법</b>을 따라 Supabase URL과 anon 키를 등록해 주세요.
+      </p>
+      <button id="btn-demo" class="btn primary block" type="button">데모 데이터로 미리보기</button>
+      <p class="muted sm-text">데모 데이터는 이 브라우저에만 저장되며, 실제 수원시 기온을 사용합니다.</p>
+    </div>
+  </section>
+
+  <!-- 로그인 -->
+  <section id="auth-screen" class="center-screen hidden">
+    <form id="auth-form" class="glass auth-card" autocomplete="on">
+      <div class="brand big"><span class="flame">🔥</span> 온기</div>
+      <h1>우리집 난방비 대시보드</h1>
+      <p class="muted">로그인하면 어느 기기에서든 검침 기록이 동기화됩니다.</p>
+      <label class="field">
+        <span>이메일</span>
+        <input id="auth-email" type="email" required autocomplete="email" />
+      </label>
+      <label class="field">
+        <span>비밀번호</span>
+        <input id="auth-password" type="password" required minlength="6" autocomplete="current-password" />
+      </label>
+      <button id="btn-login" class="btn primary block" type="submit">로그인</button>
+      <button id="btn-signup" class="btn ghost block" type="button">처음이신가요? 계정 만들기</button>
+      <p id="auth-msg" class="form-msg" role="status"></p>
+    </form>
+  </section>
+
+  <!-- 대시보드 -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand"><span class="flame">🔥</span> 온기 <small>난방비 대시보드</small></div>
+      <nav class="month-nav" aria-label="월 선택">
+        <button id="btn-prev-month" class="icon-btn" aria-label="이전 달">‹</button>
+        <h1 id="month-label">----년 --월</h1>
+        <button id="btn-next-month" class="icon-btn" aria-label="다음 달">›</button>
+        <button id="btn-this-month" class="chip">이번 달</button>
+      </nav>
+      <div class="user-box">
+        <span id="user-email" class="muted"></span>
+        <button id="btn-logout" class="btn ghost sm">로그아웃</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- KPI -->
+      <section class="kpis" aria-label="이번 달 요약">
+        <article class="glass kpi accent-1">
+          <span class="kpi-label">사용량</span>
+          <strong class="kpi-value"><span id="kpi-usage">-</span><em id="kpi-unit">L</em></strong>
+          <span id="kpi-usage-delta" class="kpi-sub"></span>
+        </article>
+        <article class="glass kpi accent-2">
+          <span class="kpi-label">현재까지 난방비</span>
+          <strong class="kpi-value"><span id="kpi-cost">-</span><em>원</em></strong>
+          <span id="kpi-cost-delta" class="kpi-sub"></span>
+        </article>
+        <article class="glass kpi accent-3">
+          <span class="kpi-label">월말 예상 난방비</span>
+          <strong class="kpi-value"><span id="kpi-projected">-</span><em>원</em></strong>
+          <span id="kpi-projected-sub" class="kpi-sub"></span>
+        </article>
+        <article class="glass kpi accent-4">
+          <span class="kpi-label">일평균 사용량 · 평균기온</span>
+          <strong class="kpi-value"><span id="kpi-avg">-</span><em id="kpi-avg-unit">L</em></strong>
+          <span id="kpi-temp" class="kpi-sub"></span>
+        </article>
+      </section>
+
+      <div class="grid-main">
+        <!-- 일별 차트 -->
+        <section class="glass card chart-card">
+          <div class="card-head">
+            <h2>일별 사용량 &amp; 수원 기온</h2>
+            <div class="legend-hint muted">막대: 사용량 · 선: 최고/최저 기온</div>
+          </div>
+          <div class="chart-wrap tall"><canvas id="chart-daily"></canvas></div>
+        </section>
+
+        <!-- 사이드 -->
+        <aside class="side">
+          <section class="glass card">
+            <div class="card-head"><h2>검침 입력</h2><span id="last-reading" class="muted sm-text"></span></div>
+            <form id="reading-form" class="form-grid">
+              <label class="field">
+                <span>날짜</span>
+                <input id="reading-date" type="date" required />
+              </label>
+              <label class="field">
+                <span>계량기 값</span>
+                <input id="reading-value" type="number" step="0.001" min="0" inputmode="decimal" required placeholder="예: 12345.6" />
+              </label>
+              <label class="field span-2">
+                <span>메모 (선택)</span>
+                <input id="reading-memo" type="text" maxlength="100" placeholder="예: 외출, 손님 방문" />
+              </label>
+              <p id="reading-preview" class="preview span-2"></p>
+              <button id="btn-save-reading" class="btn primary span-2" type="submit">저장</button>
+            </form>
+          </section>
+
+          <section class="glass card">
+            <div class="card-head"><h2>이번 달 단가</h2><span id="rate-status" class="badge"></span></div>
+            <form id="rate-form" class="form-grid">
+              <label class="field">
+                <span id="rate-unit-label">1L당 단가 (원)</span>
+                <input id="rate-price" type="number" step="0.0001" min="0" inputmode="decimal" required />
+              </label>
+              <label class="field">
+                <span>기본요금 (원, 선택)</span>
+                <input id="rate-base" type="number" step="1" min="0" inputmode="numeric" value="0" />
+              </label>
+              <button id="btn-save-rate" class="btn secondary span-2" type="submit">단가 저장</button>
+            </form>
+          </section>
+
+          <section class="glass card">
+            <div class="card-head"><h2 id="forecast-title">수원 7일 예보</h2></div>
+            <ul id="forecast-list" class="forecast"></ul>
+          </section>
+        </aside>
+      </div>
+
+      <div class="grid-2">
+        <section class="glass card">
+          <div class="card-head"><h2>월별 난방비 추이</h2><span class="muted sm-text">최근 12개월</span></div>
+          <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
+        </section>
+        <section class="glass card">
+          <div class="card-head"><h2>평균기온 vs 사용량</h2><span id="corr-badge" class="badge"></span></div>
+          <div class="chart-wrap"><canvas id="chart-scatter"></canvas></div>
+        </section>
+      </div>
+
+      <section class="glass card">
+        <div class="card-head">
+          <h2>검침 기록</h2>
+          <div class="actions">
+            <label class="btn ghost sm" for="csv-input">CSV 가져오기</label>
+            <input id="csv-input" type="file" accept=".csv,.tsv,.txt" hidden />
+            <button id="btn-export" class="btn ghost sm">CSV 내보내기</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="records">
+            <thead>
+              <tr>
+                <th>날짜</th><th>계량기</th><th>사용량</th><th>난방비</th>
+                <th>최고</th><th>최저</th><th>메모</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="records-body"></tbody>
+          </table>
+          <p id="records-empty" class="empty hidden">이 달의 검침 기록이 없습니다. 오른쪽 위 폼에서 첫 검침값을 입력해 보세요.</p>
+        </div>
+      </section>
+
+      <footer class="foot muted">
+        기온 데이터: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (수원시 37.26°N, 127.03°E) ·
+        검침 간격이 2일 이상이면 사용량을 기간에 균등 배분합니다.
+      </footer>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
