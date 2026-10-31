@@ -35,7 +35,9 @@ export function resolveRate(rates, month) {
 
 /**
  * 검침 기록 → 검침행 + 일별(달력) 시계열
- * - 검침 간격이 2일 이상이면 사용량을 해당 기간에 균등 배분 (일별 시계열에서 estimated=true)
+ * - 검침이 없었던 달은 0원으로 유지
+ * - 검침이 있는 달은 직전 검침값과의 차이를 해당 월 1일부터 배분
+ * - 같은 달 내 2일 이상 미검침 시 직전 검침 다음 날부터 균등 배분
  */
 export function computeSeries(readings, rates) {
   const sorted = [...readings].sort((a, b) => (a.reading_date < b.reading_date ? -1 : 1));
@@ -46,18 +48,32 @@ export function computeSeries(readings, rates) {
     const prev = sorted[i - 1];
     const row = { ...r, usage: null, gapDays: null, cost: null, anomaly: false };
     if (prev) {
-      const gap = diffDays(prev.reading_date, r.reading_date);
       const usage = r.meter_value - prev.meter_value;
       row.usage = usage;
-      row.gapDays = gap;
       row.anomaly = usage < 0;
+
+      const prevMonth = monthOf(prev.reading_date);
+      const curMonth = monthOf(r.reading_date);
+
+      // 같은 달이면 직전 검침 다음날부터 배분,
+      // 다른 달이면 해당 월의 1일부터 배분 (미검침 달은 0으로 유지)
+      let startDay;
+      if (prevMonth === curMonth) {
+        startDay = addDays(prev.reading_date, 1);
+      } else {
+        startDay = `${curMonth}-01`;
+      }
+
+      const allocDays = Math.max(1, diffDays(startDay, r.reading_date) + 1);
+      row.gapDays = diffDays(prev.reading_date, r.reading_date);
+
       let cost = 0;
-      if (gap > 0) {
-        const per = usage / gap;
-        for (let k = 1; k <= gap; k++) {
-          const d = addDays(prev.reading_date, k);
+      if (usage >= 0 && allocDays > 0) {
+        const per = usage / allocDays;
+        for (let k = 0; k < allocDays; k++) {
+          const d = addDays(startDay, k);
           const price = resolveRate(rates, monthOf(d)).unit_price;
-          daily[d] = { usage: per, cost: per * price, estimated: gap > 1 };
+          daily[d] = { usage: per, cost: per * price, estimated: allocDays > 1 };
           cost += per * price;
         }
       }
