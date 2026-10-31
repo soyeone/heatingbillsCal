@@ -2,11 +2,19 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
 const cfg = window.APP_CONFIG || {};
+
+// '.../rest/v1/' 처럼 경로가 붙어 있어도 프로젝트 주소(origin)만 사용
+function normalizeUrl(u) {
+  try { return new URL(String(u).trim()).origin; } catch { return ''; }
+}
+const SUPABASE_URL = normalizeUrl(cfg.SUPABASE_URL);
+const SUPABASE_KEY = String(cfg.SUPABASE_ANON_KEY || '').trim();
+
 export const isConfigured =
-  !!cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes('YOUR-PROJECT') && !!cfg.SUPABASE_ANON_KEY;
+  !!SUPABASE_URL && !SUPABASE_URL.includes('YOUR-PROJECT') && !!SUPABASE_KEY && !SUPABASE_KEY.includes('YOUR-ANON-KEY');
 
 export const supabase = isConfigured
-  ? createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, {
       auth: { persistSession: true, autoRefreshToken: true },
     })
   : null;
