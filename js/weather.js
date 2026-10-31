@@ -89,8 +89,3 @@ export async function getTemperatures(start, end, { latitude, longitude }) {
   return out;
 }
 
-/** 오늘 + 앞으로 6일 예보 */
-export async function getForecast({ latitude, longitude }) {
-  const today = ymd(new Date());
-  return fetchRange('https://api.open-meteo.com/v1/forecast', latitude, longitude, today, addDays(today, 6));
-}

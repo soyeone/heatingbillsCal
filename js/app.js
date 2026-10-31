@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { getTemperatures, getForecast, ymd } from './weather.js';
+import { getTemperatures, ymd } from './weather.js';
 import {
   computeSeries, summarizeMonth, resolveRate, monthOf, daysInMonth, shiftMonth,
   addDays, parseCsv, correlation,
@@ -593,34 +593,8 @@ async function enterApp(session, demo = false) {
   $('btn-logout').textContent = demo ? '데모 초기화' : '로그아웃';
   $('reading-date').value = todayStr();
   $('reading-date').max = todayStr();
-  $('forecast-title').textContent = `${LOC.name} 7일 예보`;
   show('app');
   try { await loadData(); } catch (e) { console.error(e); toast('데이터 로딩 실패: ' + e.message, true); }
-  renderForecast();
-}
-
-async function renderForecast() {
-  try {
-    const f = await getForecast(LOC);
-    const entries = Object.entries(f);
-    const gMax = Math.max(...entries.map(([, t]) => t.max));
-    const gMin = Math.min(...entries.map(([, t]) => t.min));
-    const span = gMax - gMin || 1;
-    const today = todayStr();
-    $('forecast-list').innerHTML = entries.map(([d, t]) => {
-      const dow = new Date(d + 'T00:00:00').getDay();
-      const top = ((gMax - t.max) / span) * 100;
-      const h = ((t.max - t.min) / span) * 100;
-      return `<li class="${d === today ? 'today' : ''}">
-        <span class="dow">${d === today ? '오늘' : DOW[dow]}</span>
-        <span class="hi">${Math.round(t.max)}°</span>
-        <span class="bar"><i style="top:${top}%;height:${Math.max(h, 6)}%"></i></span>
-        <span class="lo">${Math.round(t.min)}°</span>
-      </li>`;
-    }).join('');
-  } catch (e) {
-    $('forecast-list').innerHTML = '<li class="muted" style="grid-column:span 7">예보를 불러오지 못했습니다</li>';
-  }
 }
 
 // =====================================================================
