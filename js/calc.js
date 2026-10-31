@@ -89,23 +89,60 @@ export function summarizeMonth(daily, rates, month, todayStr) {
   };
 }
 
-/** CSV 파싱: "날짜,계량기값[,메모]" */
+/** CSV 파싱: "날짜(시간포함가능),계량기값[,메모]" */
 export function parseCsv(text) {
-  const out = [];
+  const byDate = new Map();
+  const rawRows = [];
   const errors = [];
+
   text.split(/\r?\n/).forEach((line, idx) => {
     if (!line.trim()) return;
     const cols = line.split(/[,\t;]/).map((c) => c.trim().replace(/^"|"$/g, ''));
-    const m = cols[0].match(/^(\d{4})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})/);
+    const m = cols[0].match(/^(\d{4})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})(.*)$/);
     const val = Number((cols[1] || '').replace(/[^\d.\-]/g, ''));
     if (!m || cols[1] === undefined || cols[1] === '' || Number.isNaN(val)) {
       if (idx > 0) errors.push(idx + 1);
       return;
     }
     const date = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-    out.push({ reading_date: date, meter_value: val, memo: cols[2] || null });
+    const timePart = (m[4] || '').replace(/^[일\s,]+/, '').trim();
+    const memo = cols[2] ? cols[2] : (timePart || null);
+    rawRows.push({ reading_date: date, meter_value: val, timePart, memo });
   });
-  return { rows: out, errors };
+
+  // 같은 날짜에 여러 번 검침한 경우:
+  // 하루 최종 검침값을 기준값으로 삼고, 이전 검침값/시간을 메모에 보존합니다.
+  for (const r of rawRows) {
+    if (!byDate.has(r.reading_date)) {
+      byDate.set(r.reading_date, { ...r, earlier: [] });
+    } else {
+      const existing = byDate.get(r.reading_date);
+      existing.earlier.push({ meter_value: existing.meter_value, timePart: existing.timePart });
+      existing.meter_value = r.meter_value;
+      existing.timePart = r.timePart;
+      if (r.memo) existing.memo = r.memo;
+    }
+  }
+
+  const out = [];
+  for (const [date, item] of byDate.entries()) {
+    let finalMemo = item.memo || '';
+    if (item.earlier.length > 0) {
+      const earlierDesc = item.earlier
+        .map((e) => (e.timePart ? `${e.timePart}: ${e.meter_value}` : `${e.meter_value}`))
+        .join(', ');
+      finalMemo = finalMemo
+        ? `${finalMemo} (이전: ${earlierDesc})`
+        : `이전: ${earlierDesc}`;
+    }
+    out.push({
+      reading_date: date,
+      meter_value: item.meter_value,
+      memo: finalMemo || null,
+    });
+  }
+
+  return { rows: out, rawCount: rawRows.length, errors };
 }
 
 /** 피어슨 상관계수 */

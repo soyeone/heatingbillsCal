@@ -549,13 +549,20 @@ function bindEvents() {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    const { rows, errors } = parseCsv(await file.text());
+    const { rows, rawCount, errors } = parseCsv(await file.text());
     if (!rows.length) { toast('가져올 수 있는 행이 없습니다. 형식: 날짜,계량기값[,메모]', true); return; }
-    const msg = `${rows.length}건을 가져옵니다${errors.length ? ` (인식 실패 ${errors.length}행 제외)` : ''}.\n같은 날짜의 기존 기록은 덮어씁니다. 진행할까요?`;
+    let msg = '';
+    if (rawCount && rawCount > rows.length) {
+      msg = `총 ${rawCount}개 기록 중 하루 여러 번 측정한 날은 당일 최종 검침값(${rows.length}일치)으로 정리하여 가져옵니다.\n(이전 측정값은 메모에 자동 기록됩니다.)\n\n진행할까요?`;
+    } else {
+      msg = `${rows.length}건을 가져옵니다${errors.length ? ` (인식 실패 ${errors.length}행 제외)` : ''}.\n같은 날짜의 기존 기록은 덮어씁니다. 진행할까요?`;
+    }
     if (!confirm(msg)) return;
     try {
       await state.store.upsertReadingsBulk(rows);
-      toast(`${rows.length}건을 가져왔습니다`);
+      toast(`${rows.length}일치 데이터를 가져왔습니다`);
+      const latestDate = rows.map((r) => r.reading_date).sort().pop();
+      if (latestDate) state.month = monthOf(latestDate);
       await loadData();
     } catch (err) { toast(err.message, true); }
   });
